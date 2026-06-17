@@ -1,4 +1,15 @@
-# 전국 분양공고 자동 수집기
+---
+title: 아파트 공고 수집기
+emoji: 🏢
+colorFrom: green
+colorTo: teal
+sdk: streamlit
+sdk_version: 1.40.0
+app_file: app.py
+pinned: false
+---
+
+# 🏢 아파트 분양공고 자동 수집기 (Streamlit Web UI)
 
 전국 아파트·오피스텔·도시형생활주택 등 모든 분양공고를 자동 수집합니다.
 
