@@ -18,6 +18,10 @@ OUTPUT_DIR = os.getenv("OUTPUT_DIR", "data/output")
 # 요청 딜레이 (초)
 REQUEST_DELAY = float(os.getenv("REQUEST_DELAY", "1.5"))
 
+# Notion 연동
+NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
+NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID", "")
+
 # 지역 코드 (시도)
 REGION_CODES = {
     "서울": "11",

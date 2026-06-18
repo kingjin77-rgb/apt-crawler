@@ -15,6 +15,7 @@ from crawlers.lh import crawl_lh
 from crawlers.sh import crawl_sh
 from crawlers.public_data import crawl_public_data
 from utils.exporter import export_excel, export_csv_by_region, export_json, print_summary
+from utils.notion_exporter import export_notion
 
 
 def parse_args():
@@ -33,8 +34,8 @@ def parse_args():
     )
     parser.add_argument(
         "--export", nargs="*", default=["excel"],
-        choices=["excel", "csv", "json", "all"],
-        help="내보내기 형식 (excel csv json all)"
+        choices=["excel", "csv", "json", "notion", "all"],
+        help="내보내기 형식 (excel csv json notion all)"
     )
     parser.add_argument(
         "--summary", action="store_true",
@@ -125,7 +126,7 @@ def run_crawl(args):
 def run_export(engine, export_formats: list[str]):
     formats = set(export_formats)
     if "all" in formats:
-        formats = {"excel", "csv", "json"}
+        formats = {"excel", "csv", "json", "notion"}
 
     if "excel" in formats:
         export_excel(engine)
@@ -133,6 +134,8 @@ def run_export(engine, export_formats: list[str]):
         export_csv_by_region(engine)
     if "json" in formats:
         export_json(engine)
+    if "notion" in formats:
+        export_notion(engine)
 
 
 def main():

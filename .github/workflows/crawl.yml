@@ -37,6 +37,8 @@ jobs:
           echo "DB_PATH=data/apt_crawler.db" >> .env
           echo "OUTPUT_DIR=data/output" >> .env
           echo "REQUEST_DELAY=1.5" >> .env
+          echo "NOTION_TOKEN=${{ secrets.NOTION_TOKEN }}" >> .env
+          echo "NOTION_DATABASE_ID=${{ secrets.NOTION_DATABASE_ID }}" >> .env
 
       - name: Run crawler
         run: |

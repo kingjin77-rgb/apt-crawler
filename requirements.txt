@@ -10,4 +10,4 @@ schedule==1.2.1
 python-dotenv==1.0.1
 openpyxl==3.1.2
 tqdm==4.66.4
-fake-useragent==1.5.1
+notion-client==2.2.1
