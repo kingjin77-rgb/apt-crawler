@@ -2,42 +2,63 @@
 청약홈 (applyhome.co.kr) 크롤러
 - 아파트, 오피스텔, 도시형생활주택 분양공고 수집
 - 공고문 전문 포함
+- Session 기반 요청으로 안정성 개선
 """
 import time
 import json
 import re
 import requests
-from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
 from config import REQUEST_DELAY
 
 BASE_URL = "https://www.applyhome.co.kr"
 
-# 분양 목록 API (청약홈 내부 Ajax)
-LIST_API = "https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancListView.do"
-DETAIL_API = "https://www.applyhome.co.kr/ai/aia/selectAPTLttotPblancDetailView.do"
+LIST_API = f"{BASE_URL}/ai/aia/selectAPTLttotPblancListView.do"
+DETAIL_API = f"{BASE_URL}/ai/aia/selectAPTLttotPblancDetailView.do"
 
-# 오피스텔/도시형
-OFT_LIST_API = "https://www.applyhome.co.kr/ai/aib/selectRemndrLttotPblancListView.do"
-OFT_DETAIL_API = "https://www.applyhome.co.kr/ai/aib/selectRemndrLttotPblancDetailView.do"
+OFT_LIST_API = f"{BASE_URL}/ai/aib/selectRemndrLttotPblancListView.do"
+OFT_DETAIL_API = f"{BASE_URL}/ai/aib/selectRemndrLttotPblancDetailView.do"
 
-ua = UserAgent()
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 
-def _headers():
+
+def _create_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+    })
+    try:
+        session.get(BASE_URL, timeout=15)
+        time.sleep(1)
+    except Exception as e:
+        print(f"  [세션 초기화 경고] {e}")
+    return session
+
+
+def _api_headers():
     return {
-        "User-Agent": ua.random,
-        "Referer": BASE_URL,
         "Accept": "application/json, text/javascript, */*; q=0.01",
-        "Accept-Language": "ko-KR,ko;q=0.9",
-        "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": f"{BASE_URL}/co/coa/selectMainView.do",
+        "Origin": BASE_URL,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
     }
 
 
-def _post(url: str, payload: dict, retries: int = 3) -> dict | None:
+def _post(session: requests.Session, url: str, payload: dict, retries: int = 3) -> dict | None:
     for attempt in range(retries):
         try:
-            resp = requests.post(url, data=payload, headers=_headers(), timeout=30)
+            resp = session.post(url, data=payload, headers=_api_headers(), timeout=30)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -46,67 +67,50 @@ def _post(url: str, payload: dict, retries: int = 3) -> dict | None:
     return None
 
 
-def _get(url: str, retries: int = 3) -> requests.Response | None:
-    for attempt in range(retries):
-        try:
-            resp = requests.get(url, headers={**_headers(), "Accept": "text/html"}, timeout=30)
-            resp.raise_for_status()
-            return resp
-        except Exception as e:
-            print(f"  [재시도 {attempt+1}/{retries}] {url} → {e}")
-            time.sleep(REQUEST_DELAY * (attempt + 1))
-    return None
-
-
-def fetch_apt_list(region_code: str = "", page_no: int = 1, page_size: int = 100) -> list[dict]:
-    """아파트 분양공고 목록 수집"""
+def fetch_apt_list(session: requests.Session, region_code: str = "", page_no: int = 1, page_size: int = 100) -> list[dict]:
     payload = {
         "pageNo": page_no,
         "numOfRows": page_size,
         "sidoCode": region_code,
         "searchCondition": "",
     }
-    data = _post(LIST_API, payload)
+    data = _post(session, LIST_API, payload)
     if not data:
         return []
-
     items = data.get("dataBody", {}).get("data", {}).get("applyhomeAPTLttotPblancListVO", [])
     return items or []
 
 
-def fetch_oft_list(region_code: str = "", page_no: int = 1, page_size: int = 100) -> list[dict]:
-    """오피스텔/도시형생활주택 분양공고 목록 수집"""
+def fetch_oft_list(session: requests.Session, region_code: str = "", page_no: int = 1, page_size: int = 100) -> list[dict]:
     payload = {
         "pageNo": page_no,
         "numOfRows": page_size,
         "sidoCode": region_code,
     }
-    data = _post(OFT_LIST_API, payload)
+    data = _post(session, OFT_LIST_API, payload)
     if not data:
         return []
     items = data.get("dataBody", {}).get("data", {}).get("applyhomeRemndrLttotPblancListVO", [])
     return items or []
 
 
-def fetch_apt_detail(pblanc_no: str, house_manage_no: str) -> dict | None:
-    """아파트 공고 상세 + 공고문 전문"""
+def fetch_apt_detail(session: requests.Session, pblanc_no: str, house_manage_no: str) -> dict | None:
     payload = {
         "pblancNo": pblanc_no,
         "houseManageNo": house_manage_no,
     }
-    data = _post(DETAIL_API, payload)
+    data = _post(session, DETAIL_API, payload)
     if not data:
         return None
     return data.get("dataBody", {}).get("data", {})
 
 
-def fetch_oft_detail(pblanc_no: str, house_manage_no: str) -> dict | None:
-    """오피스텔 공고 상세"""
+def fetch_oft_detail(session: requests.Session, pblanc_no: str, house_manage_no: str) -> dict | None:
     payload = {
         "pblancNo": pblanc_no,
         "houseManageNo": house_manage_no,
     }
-    data = _post(OFT_DETAIL_API, payload)
+    data = _post(session, OFT_DETAIL_API, payload)
     if not data:
         return None
     return data.get("dataBody", {}).get("data", {})
@@ -122,7 +126,6 @@ def _extract_price(text: str | None) -> int | None:
 
 
 def parse_apt_item(item: dict, detail: dict | None) -> dict:
-    """청약홈 아파트 항목 → 표준 딕셔너리"""
     d = detail or {}
     house_info = d.get("applyhomeAPTLttotPblancDetailVO", item)
     supply_list = d.get("applyhomeAPTSuplyTypeDtlListVO", [])
@@ -165,7 +168,6 @@ def parse_apt_item(item: dict, detail: dict | None) -> dict:
 
 
 def parse_oft_item(item: dict, detail: dict | None) -> dict:
-    """오피스텔/도시형 항목 → 표준 딕셔너리"""
     d = detail or {}
     house_info = d.get("applyhomeRemndrLttotPblancDetailVO", item)
 
@@ -205,7 +207,6 @@ def parse_oft_item(item: dict, detail: dict | None) -> dict:
 
 
 def _extract_content(detail: dict) -> str:
-    """상세 데이터에서 공고문 핵심 텍스트 추출"""
     parts = []
 
     for key in ["applyhomeAPTLttotPblancDetailVO", "applyhomeRemndrLttotPblancDetailVO"]:
@@ -232,22 +233,22 @@ def _extract_content(detail: dict) -> str:
 
 
 def crawl_all_regions(region_codes: dict[str, str], fetch_detail: bool = True) -> list[dict]:
-    """전국 전체 수집"""
     results = []
+    session = _create_session()
 
     print("[청약홈] 아파트 수집 시작")
     for region_name, region_code in region_codes.items():
         print(f"  → {region_name} ({region_code})")
         page = 1
         while True:
-            items = fetch_apt_list(region_code, page_no=page)
+            items = fetch_apt_list(session, region_code, page_no=page)
             if not items:
                 break
             for item in items:
                 detail = None
                 if fetch_detail and item.get("pblancNo"):
                     detail = fetch_apt_detail(
-                        item["pblancNo"], item.get("houseManageNo", "")
+                        session, item["pblancNo"], item.get("houseManageNo", "")
                     )
                     time.sleep(REQUEST_DELAY)
                 results.append(parse_apt_item(item, detail))
@@ -261,14 +262,14 @@ def crawl_all_regions(region_codes: dict[str, str], fetch_detail: bool = True) -
         print(f"  → {region_name} ({region_code})")
         page = 1
         while True:
-            items = fetch_oft_list(region_code, page_no=page)
+            items = fetch_oft_list(session, region_code, page_no=page)
             if not items:
                 break
             for item in items:
                 detail = None
                 if fetch_detail and item.get("pblancNo"):
                     detail = fetch_oft_detail(
-                        item["pblancNo"], item.get("houseManageNo", "")
+                        session, item["pblancNo"], item.get("houseManageNo", "")
                     )
                     time.sleep(REQUEST_DELAY)
                 results.append(parse_oft_item(item, detail))
