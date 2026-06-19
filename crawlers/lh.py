@@ -31,7 +31,7 @@ def _create_session() -> requests.Session:
         "Connection": "keep-alive",
     })
     try:
-        session.get(BASE_URL, timeout=15)
+        session.get(BASE_URL, timeout=5)
         time.sleep(1)
     except Exception as e:
         print(f"  [LH 세션 초기화 경고] {e}")
@@ -51,10 +51,10 @@ def _api_headers():
     }
 
 
-def _post(session: requests.Session, url: str, payload: dict, retries: int = 3) -> dict | None:
+def _post(session: requests.Session, url: str, payload: dict, retries: int = 2) -> dict | None:
     for attempt in range(retries):
         try:
-            resp = session.post(url, data=payload, headers=_api_headers(), timeout=30)
+            resp = session.post(url, data=payload, headers=_api_headers(), timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:

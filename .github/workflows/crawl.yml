@@ -12,7 +12,7 @@ on:
       sources:
         description: '수집 출처 (applyhome lh sh public)'
         required: false
-        default: 'applyhome lh sh public'
+        default: 'public'
 
 jobs:
   crawl:

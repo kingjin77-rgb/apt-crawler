@@ -32,7 +32,7 @@ def _create_session() -> requests.Session:
         "Referer": BASE_URL,
     })
     try:
-        session.get(BASE_URL, timeout=15)
+        session.get(BASE_URL, timeout=5)
         time.sleep(1)
     except Exception as e:
         print(f"  [SH 세션 초기화 경고] {e}")
@@ -46,7 +46,7 @@ def fetch_sh_list(session: requests.Session, page_no: int = 1) -> list[dict]:
         "searchValue": "",
     }
     try:
-        resp = session.get(LIST_URL, params=params, timeout=30)
+        resp = session.get(LIST_URL, params=params, timeout=10)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "lxml")
 
