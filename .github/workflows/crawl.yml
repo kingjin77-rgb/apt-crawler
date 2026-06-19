@@ -41,6 +41,8 @@ jobs:
           echo "NOTION_DATABASE_ID=${{ secrets.NOTION_DATABASE_ID }}" >> .env
 
       - name: Run crawler
+        env:
+          PYTHONUNBUFFERED: '1'
         run: |
           ARGS="--no-detail --export all"
           if [ -n "${{ github.event.inputs.regions }}" ]; then
@@ -50,7 +52,7 @@ jobs:
             ARGS="--sources ${{ github.event.inputs.sources }} $ARGS"
           fi
           python main.py $ARGS
-        timeout-minutes: 10
+        timeout-minutes: 15
 
       - name: Upload results
         uses: actions/upload-artifact@v4

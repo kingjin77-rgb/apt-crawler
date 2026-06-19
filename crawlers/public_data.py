@@ -4,6 +4,7 @@
 - 아파트 분양(청약) 공고 수집
 - API 키 기반이라 해외/클라우드 IP에서도 동작
 """
+import os
 import time
 import json
 import requests
@@ -100,7 +101,8 @@ def crawl_public_data(region_codes: dict[str, str]) -> list[dict]:
     collect_all = len(region_names) >= 17
 
     page = 1
-    max_pages = 50
+    # 최신 분양공고 위주로 수집 (역대 전체 수집 시 Notion 내보내기 과부하)
+    max_pages = int(os.getenv("PUBLIC_MAX_PAGES", "5"))
     while page <= max_pages:
         items = fetch_apt_lttot(session, page_no=page, per_page=100)
         if not items:
