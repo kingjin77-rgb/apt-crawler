@@ -1,17 +1,16 @@
 """
-공공데이터포털 국토교통부 주택청약 API 크롤러
-- API: https://www.data.go.kr/data/15059466/openapi.do
-- 청약공고 + 분양정보 수집
-- Session 기반 요청으로 안정성 개선
+공공데이터포털 청약홈 분양정보 API 크롤러
+- API: https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail
+- 아파트 분양(청약) 공고 수집
+- API 키 기반이라 해외/클라우드 IP에서도 동작
 """
 import time
 import json
 import requests
 from config import PUBLIC_DATA_API_KEY, REQUEST_DELAY
 
-APT_API_URL = "http://openapi.molit.go.kr/OpenAPI_ToolInstallPackage/service/rest/RTMSOBJSvc/getRTMSDataSvcAptLttot"
-APPLY_API_BASE = "https://api.applyhome.co.kr"
-HUG_API_URL = "http://apis.data.go.kr/1611000/nsdi/LHBunayang/getLHBunayangList"
+# 청약홈 아파트 분양정보 상세조회 (공공데이터포털 ODcloud)
+APT_API_URL = "https://api.odcloud.kr/api/ApplyhomeInfoDetailSvc/v1/getAPTLttotPblancDetail"
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -30,12 +29,11 @@ def _create_session() -> requests.Session:
     return session
 
 
-def _get_json(session: requests.Session, url: str, params: dict, retries: int = 3) -> dict | None:
+def _get_json(session: requests.Session, url: str, params: dict, retries: int = 2) -> dict | None:
     params["serviceKey"] = PUBLIC_DATA_API_KEY
-    params.setdefault("_type", "json")
     for attempt in range(retries):
         try:
-            resp = session.get(url, params=params, timeout=30)
+            resp = session.get(url, params=params, timeout=15)
             resp.raise_for_status()
             try:
                 return resp.json()
@@ -43,27 +41,19 @@ def _get_json(session: requests.Session, url: str, params: dict, retries: int = 
                 return {"raw": resp.text}
         except Exception as e:
             print(f"  [재시도 {attempt+1}/{retries}] {e}")
-            time.sleep(REQUEST_DELAY * (attempt + 1))
+            time.sleep(REQUEST_DELAY)
     return None
 
 
-def fetch_apt_lttot(session: requests.Session, sido_code: str = "", page_no: int = 1, num_of_rows: int = 100) -> list[dict]:
+def fetch_apt_lttot(session: requests.Session, page_no: int = 1, per_page: int = 100) -> list[dict]:
     params = {
-        "pageNo": page_no,
-        "numOfRows": num_of_rows,
-        "SIDO_CD": sido_code,
+        "page": page_no,
+        "perPage": per_page,
     }
     data = _get_json(session, APT_API_URL, params)
     if not data:
         return []
-
-    try:
-        items = data["response"]["body"]["items"]["item"]
-        if isinstance(items, dict):
-            items = [items]
-        return items
-    except (KeyError, TypeError):
-        return []
+    return data.get("data", []) or []
 
 
 def parse_public_apt_item(item: dict) -> dict:
@@ -72,13 +62,13 @@ def parse_public_apt_item(item: dict) -> dict:
         "announce_id": str(item.get("HOUSE_MANAGE_NO", item.get("PBLANC_NO", ""))),
         "title": item.get("HOUSE_NM", ""),
         "housing_type": item.get("HOUSE_SECD_NM", "아파트"),
-        "region_sido": item.get("SIDO_NM", ""),
-        "region_sigungu": item.get("SIGNGU_NM", ""),
+        "region_sido": item.get("SUBSCRPT_AREA_CODE_NM", ""),
+        "region_sigungu": "",
         "region_address": item.get("HSSPLY_ADRES", ""),
         "supply_count": _safe_int(item.get("TOT_SUPLY_HSHLDCO")),
         "recruitment_start": item.get("RCEPT_BGNDE", ""),
         "recruitment_end": item.get("RCEPT_ENDDE", ""),
-        "announce_date": item.get("PBLANC_DE", ""),
+        "announce_date": item.get("RCRIT_PBLANC_DE", ""),
         "winner_date": item.get("PRZWNER_PRESNATN_DE", ""),
         "move_in_date": item.get("MVN_PREARNGE_YM", ""),
         "min_price": None,
@@ -98,24 +88,32 @@ def _safe_int(val) -> int | None:
 
 def crawl_public_data(region_codes: dict[str, str]) -> list[dict]:
     results = []
-    if PUBLIC_DATA_API_KEY == "YOUR_API_KEY_HERE":
+    if not PUBLIC_DATA_API_KEY or PUBLIC_DATA_API_KEY == "YOUR_API_KEY_HERE":
         print("[공공데이터포털] API 키 미설정 — 건너뜀 (.env에 PUBLIC_DATA_API_KEY 설정 필요)")
         return results
 
     session = _create_session()
     print("[공공데이터포털] 아파트 청약공고 수집 시작")
-    for region_name, region_code in region_codes.items():
-        print(f"  → {region_name}")
-        page = 1
-        while True:
-            items = fetch_apt_lttot(session, sido_code=region_code, page_no=page)
-            if not items:
-                break
-            for item in items:
-                results.append(parse_public_apt_item(item))
-            if len(items) < 100:
-                break
-            page += 1
-            time.sleep(REQUEST_DELAY)
 
+    # 전국(17개 시도) 요청이면 지역 필터 없이 전체 수집
+    region_names = set(region_codes.keys())
+    collect_all = len(region_names) >= 17
+
+    page = 1
+    max_pages = 50
+    while page <= max_pages:
+        items = fetch_apt_lttot(session, page_no=page, per_page=100)
+        if not items:
+            break
+        for item in items:
+            sido = item.get("SUBSCRPT_AREA_CODE_NM", "")
+            if not collect_all and not any(r in sido for r in region_names):
+                continue
+            results.append(parse_public_apt_item(item))
+        if len(items) < 100:
+            break
+        page += 1
+        time.sleep(REQUEST_DELAY)
+
+    print(f"[공공데이터포털] {len(results)}건 수집")
     return results
