@@ -4,14 +4,18 @@ notion-client 패키지 필요: pip install notion-client
 """
 import os
 import re
+import time
 from datetime import datetime
 from notion_client import Client
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from models.database import Announcement
 
 
 NOTION_TOKEN = os.getenv("NOTION_TOKEN", "")
 NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID", "")
+# 1회 실행당 Notion에 신규 생성할 최대 건수 (rate limit 대응)
+NOTION_MAX_PER_RUN = int(os.getenv("NOTION_MAX_PER_RUN", "200"))
 
 
 def _parse_date(date_str: str | None) -> str | None:
@@ -103,8 +107,13 @@ def export_notion(engine, database_id: str = "", token: str = ""):
 
     notion = Client(auth=api_token)
 
+    # 최신 공고(공고일 내림차순)부터 우선 내보내기
     with Session(engine) as session:
-        items = session.query(Announcement).all()
+        items = (
+            session.query(Announcement)
+            .order_by(desc(Announcement.announce_date))
+            .all()
+        )
 
     if not items:
         print("[Notion] 내보낼 데이터 없음")
@@ -130,17 +139,27 @@ def export_notion(engine, database_id: str = "", token: str = ""):
         print(f"  [Notion 기존 데이터 조회 경고] {e}")
 
     created = 0
+    skipped_limit = 0
     for item in items:
         aid = str(item.announce_id or "")
         if aid in existing_ids:
+            continue
+
+        if created >= NOTION_MAX_PER_RUN:
+            skipped_limit += 1
             continue
 
         try:
             props = _build_properties(item)
             notion.pages.create(parent={"database_id": db_id}, properties=props)
             created += 1
+            # Notion API rate limit(~3 req/s) 대응
+            time.sleep(0.34)
         except Exception as e:
             print(f"  [Notion 저장 오류] {item.title}: {e}")
 
-    print(f"[Notion] {created}건 신규 저장 (기존 {len(existing_ids)}건 스킵)")
+    msg = f"[Notion] {created}건 신규 저장 (기존 {len(existing_ids)}건 스킵)"
+    if skipped_limit:
+        msg += f" / 이번 실행 한도({NOTION_MAX_PER_RUN}) 초과로 {skipped_limit}건은 다음 실행에 저장"
+    print(msg)
     return created
