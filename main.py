@@ -15,6 +15,7 @@ from crawlers.lh import crawl_lh
 from crawlers.sh import crawl_sh
 from crawlers.public_data import crawl_public_data
 from utils.exporter import export_excel, export_csv_by_region, export_json, print_summary
+from utils.notion_exporter import export_notion
 
 
 def parse_args():
@@ -33,8 +34,8 @@ def parse_args():
     )
     parser.add_argument(
         "--export", nargs="*", default=["excel"],
-        choices=["excel", "csv", "json", "all"],
-        help="내보내기 형식 (excel csv json all)"
+        choices=["excel", "csv", "json", "notion", "all"],
+        help="내보내기 형식 (excel csv json notion all)"
     )
     parser.add_argument(
         "--summary", action="store_true",
@@ -64,6 +65,7 @@ def run_crawl(args):
     engine = init_db(DB_PATH)
     total_new = 0
     total_updated = 0
+    errors = []
 
     def save_items(items: list[dict]):
         nonlocal total_new, total_updated
@@ -74,31 +76,49 @@ def run_crawl(args):
             else:
                 total_updated += 1
 
-    # 청약홈
     if "applyhome" in sources:
-        items = crawl_applyhome(target_regions, fetch_detail=fetch_detail)
-        save_items(items)
-        print(f"  청약홈 수집: {len(items)}건")
+        try:
+            items = crawl_applyhome(target_regions, fetch_detail=fetch_detail)
+            save_items(items)
+            print(f"  청약홈 수집: {len(items)}건")
+        except Exception as e:
+            errors.append(f"청약홈: {e}")
+            print(f"  [청약홈 오류] {e}")
 
-    # LH
     if "lh" in sources:
-        items = crawl_lh(target_regions, fetch_detail=fetch_detail)
-        save_items(items)
-        print(f"  LH 수집: {len(items)}건")
+        try:
+            items = crawl_lh(target_regions, fetch_detail=fetch_detail)
+            save_items(items)
+            print(f"  LH 수집: {len(items)}건")
+        except Exception as e:
+            errors.append(f"LH: {e}")
+            print(f"  [LH 오류] {e}")
 
-    # SH (서울 포함 시)
     if "sh" in sources and ("서울" in target_regions or region_filter is None):
-        items = crawl_sh(fetch_detail=fetch_detail)
-        save_items(items)
-        print(f"  SH 수집: {len(items)}건")
+        try:
+            items = crawl_sh(fetch_detail=fetch_detail)
+            save_items(items)
+            print(f"  SH 수집: {len(items)}건")
+        except Exception as e:
+            errors.append(f"SH: {e}")
+            print(f"  [SH 오류] {e}")
 
-    # 공공데이터포털
     if "public" in sources:
-        items = crawl_public_data(target_regions)
-        save_items(items)
-        print(f"  공공데이터포털 수집: {len(items)}건")
+        try:
+            items = crawl_public_data(target_regions)
+            save_items(items)
+            print(f"  공공데이터포털 수집: {len(items)}건")
+        except Exception as e:
+            errors.append(f"공공데이터포털: {e}")
+            print(f"  [공공데이터포털 오류] {e}")
 
     print(f"\n신규: {total_new}건 / 업데이트: {total_updated}건")
+
+    if total_new == 0 and total_updated == 0:
+        print("\n⚠️  모든 출처에서 수집 실패. 다음을 확인하세요:")
+        print("  1. 한국 내 네트워크에서 실행 중인지 (해외/클라우드 IP 차단)")
+        print("  2. 공공데이터포털 API 키 설정 (.env → PUBLIC_DATA_API_KEY)")
+        print("  3. GitHub Actions 워크플로우로 자동 수집 설정")
 
     return engine
 
@@ -106,7 +126,7 @@ def run_crawl(args):
 def run_export(engine, export_formats: list[str]):
     formats = set(export_formats)
     if "all" in formats:
-        formats = {"excel", "csv", "json"}
+        formats = {"excel", "csv", "json", "notion"}
 
     if "excel" in formats:
         export_excel(engine)
@@ -114,6 +134,8 @@ def run_export(engine, export_formats: list[str]):
         export_csv_by_region(engine)
     if "json" in formats:
         export_json(engine)
+    if "notion" in formats:
+        export_notion(engine)
 
 
 def main():

@@ -2,38 +2,59 @@
 LH(한국토지주택공사) 청약센터 크롤러
 - https://apply.lh.or.kr
 - 공공임대 + 공공분양 공고 수집
+- Session 기반 요청으로 안정성 개선
 """
 import time
 import json
 import requests
-from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
 from config import REQUEST_DELAY
 
 BASE_URL = "https://apply.lh.or.kr"
 
-# LH 내부 API
-LIST_API = "https://apply.lh.or.kr/lhapply/apply/wt/wtmlttot/selectWtmLttotList.do"
-DETAIL_API = "https://apply.lh.or.kr/lhapply/apply/wt/wtmlttot/selectWtmLttotDetail.do"
+LIST_API = f"{BASE_URL}/lhapply/apply/wt/wtmlttot/selectWtmLttotList.do"
+DETAIL_API = f"{BASE_URL}/lhapply/apply/wt/wtmlttot/selectWtmLttotDetail.do"
 
-ua = UserAgent()
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 
 
-def _headers():
+def _create_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+    })
+    try:
+        session.get(BASE_URL, timeout=15)
+        time.sleep(1)
+    except Exception as e:
+        print(f"  [LH 세션 초기화 경고] {e}")
+    return session
+
+
+def _api_headers():
     return {
-        "User-Agent": ua.random,
-        "Referer": BASE_URL,
         "Accept": "application/json, text/javascript, */*; q=0.01",
-        "Accept-Language": "ko-KR,ko;q=0.9",
-        "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Referer": f"{BASE_URL}/lhapply/apply/wt/wtmlttot/selectWtmLttotListView.do",
+        "Origin": BASE_URL,
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-origin",
     }
 
 
-def _post(url: str, payload: dict, retries: int = 3) -> dict | None:
+def _post(session: requests.Session, url: str, payload: dict, retries: int = 3) -> dict | None:
     for attempt in range(retries):
         try:
-            resp = requests.post(url, data=payload, headers=_headers(), timeout=30)
+            resp = session.post(url, data=payload, headers=_api_headers(), timeout=30)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -42,26 +63,24 @@ def _post(url: str, payload: dict, retries: int = 3) -> dict | None:
     return None
 
 
-def fetch_lh_list(region_code: str = "", page_no: int = 1, page_size: int = 100) -> list[dict]:
-    """LH 공고 목록"""
+def fetch_lh_list(session: requests.Session, region_code: str = "", page_no: int = 1, page_size: int = 100) -> list[dict]:
     payload = {
         "pageIndex": page_no,
         "recordCountPerPage": page_size,
         "sido": region_code,
-        "lttotType": "",       # 전체 유형
+        "lttotType": "",
         "searchType": "",
         "searchValue": "",
     }
-    data = _post(LIST_API, payload)
+    data = _post(session, LIST_API, payload)
     if not data:
         return []
     return data.get("resultList", []) or []
 
 
-def fetch_lh_detail(announce_id: str) -> dict | None:
-    """LH 공고 상세"""
+def fetch_lh_detail(session: requests.Session, announce_id: str) -> dict | None:
     payload = {"lttotId": announce_id}
-    data = _post(DETAIL_API, payload)
+    data = _post(session, DETAIL_API, payload)
     if not data:
         return None
     return data.get("resultDetail", {})
@@ -117,21 +136,21 @@ def _safe_int(val) -> int | None:
 
 
 def crawl_lh(region_codes: dict[str, str], fetch_detail: bool = True) -> list[dict]:
-    """LH 전국 수집"""
     results = []
+    session = _create_session()
     print("[LH청약센터] 공고 수집 시작")
 
     for region_name, region_code in region_codes.items():
         print(f"  → {region_name}")
         page = 1
         while True:
-            items = fetch_lh_list(region_code=region_code, page_no=page)
+            items = fetch_lh_list(session, region_code=region_code, page_no=page)
             if not items:
                 break
             for item in items:
                 detail = None
                 if fetch_detail and item.get("lttotId"):
-                    detail = fetch_lh_detail(item["lttotId"])
+                    detail = fetch_lh_detail(session, item["lttotId"])
                     time.sleep(REQUEST_DELAY)
                 results.append(parse_lh_item(item, detail))
             if len(items) < 100:

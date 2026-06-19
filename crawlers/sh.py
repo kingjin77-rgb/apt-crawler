@@ -2,38 +2,51 @@
 SH공사(서울주택도시공사) 크롤러
 - https://www.i-sh.co.kr
 - 서울시 공공임대/분양 공고
+- Session 기반 요청으로 안정성 개선
 """
 import time
 import json
 import requests
 from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
 from config import REQUEST_DELAY
 
 BASE_URL = "https://www.i-sh.co.kr"
-LIST_URL = "https://www.i-sh.co.kr/main/lay2/program/S1T294C295/web/announcement/list.do"
-DETAIL_URL_PREFIX = "https://www.i-sh.co.kr/main/lay2/program/S1T294C295/web/announcement/view.do"
+LIST_URL = f"{BASE_URL}/main/lay2/program/S1T294C295/web/announcement/list.do"
+DETAIL_URL_PREFIX = f"{BASE_URL}/main/lay2/program/S1T294C295/web/announcement/view.do"
 
-ua = UserAgent()
-
-
-def _headers():
-    return {
-        "User-Agent": ua.random,
-        "Referer": LIST_URL,
-        "Accept-Language": "ko-KR,ko;q=0.9",
-    }
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 
 
-def fetch_sh_list(page_no: int = 1) -> list[dict]:
-    """SH 공고 목록 (HTML 파싱)"""
+def _create_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Referer": BASE_URL,
+    })
+    try:
+        session.get(BASE_URL, timeout=15)
+        time.sleep(1)
+    except Exception as e:
+        print(f"  [SH 세션 초기화 경고] {e}")
+    return session
+
+
+def fetch_sh_list(session: requests.Session, page_no: int = 1) -> list[dict]:
     params = {
         "pageIndex": page_no,
         "searchType": "",
         "searchValue": "",
     }
     try:
-        resp = requests.get(LIST_URL, params=params, headers=_headers(), timeout=30)
+        resp = session.get(LIST_URL, params=params, timeout=30)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "lxml")
 
@@ -73,10 +86,9 @@ def fetch_sh_list(page_no: int = 1) -> list[dict]:
         return []
 
 
-def fetch_sh_detail(url: str) -> str:
-    """SH 공고 상세 페이지 전문"""
+def fetch_sh_detail(session: requests.Session, url: str) -> str:
     try:
-        resp = requests.get(url, headers=_headers(), timeout=30)
+        resp = session.get(url, timeout=30)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "lxml")
 
@@ -129,18 +141,18 @@ def _guess_type(title: str) -> str:
 
 
 def crawl_sh(fetch_detail: bool = True, max_pages: int = 10) -> list[dict]:
-    """SH공사 공고 수집"""
     results = []
+    session = _create_session()
     print("[SH공사] 공고 수집 시작")
 
     for page in range(1, max_pages + 1):
-        items = fetch_sh_list(page_no=page)
+        items = fetch_sh_list(session, page_no=page)
         if not items:
             break
         for item in items:
             content = ""
             if fetch_detail and item.get("href"):
-                content = fetch_sh_detail(item["href"])
+                content = fetch_sh_detail(session, item["href"])
                 time.sleep(REQUEST_DELAY)
             results.append(parse_sh_item(item, content))
         time.sleep(REQUEST_DELAY)
