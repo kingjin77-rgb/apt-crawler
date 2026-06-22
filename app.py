@@ -26,8 +26,8 @@ st.sidebar.header("⚙️ 수집 설정")
 
 sources = st.sidebar.multiselect(
     "수집 출처",
-    ["applyhome (청약홈)", "lh (LH공사)", "sh (SH공사)", "public (공공데이터)"],
-    default=["applyhome (청약홈)", "lh (LH공사)"]
+    ["applyhome (청약홈)", "lh (LH공사)", "sh (SH공사)", "public (공공데이터)", "officetel (오피스텔·도시형)"],
+    default=["applyhome (청약홈)", "lh (LH공사)", "officetel (오피스텔·도시형)"]
 )
 
 regions = st.sidebar.text_input(
@@ -181,7 +181,8 @@ with tab3:
         "applyhome (청약홈)": "applyhome",
         "lh (LH공사)": "lh",
         "sh (SH공사)": "sh",
-        "public (공공데이터)": "public"
+        "public (공공데이터)": "public",
+        "officetel (오피스텔·도시형)": "officetel"
     }
     sel_sources = [src_map[s] for s in sources if s in src_map]
     sel_regions = [r.strip() for r in regions.split(",") if r.strip()] if regions else []
