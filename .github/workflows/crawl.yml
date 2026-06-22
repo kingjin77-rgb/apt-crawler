@@ -10,9 +10,9 @@ on:
         required: false
         default: ''
       sources:
-        description: '수집 출처 (applyhome lh sh public)'
+        description: '수집 출처 (applyhome lh sh public officetel building)'
         required: false
-        default: 'public'
+        default: 'public officetel building'
 
 jobs:
   crawl:
