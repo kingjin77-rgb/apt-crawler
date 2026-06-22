@@ -15,6 +15,7 @@ from crawlers.lh import crawl_lh
 from crawlers.sh import crawl_sh
 from crawlers.public_data import crawl_public_data
 from crawlers.officetel import crawl_officetel
+from crawlers.building import crawl_building
 from utils.exporter import export_excel, export_csv_by_region, export_json, print_summary
 from utils.notion_exporter import export_notion
 
@@ -26,8 +27,8 @@ def parse_args():
         help="수집할 시도 목록 (예: 서울 경기 부산). 미입력 시 전국"
     )
     parser.add_argument(
-        "--sources", nargs="*", default=["applyhome", "lh", "sh", "public", "officetel"],
-        help="수집 출처 (applyhome lh sh public officetel). 기본: 전체"
+        "--sources", nargs="*", default=["applyhome", "lh", "sh", "public", "officetel", "building"],
+        help="수집 출처 (applyhome lh sh public officetel building). 기본: 전체"
     )
     parser.add_argument(
         "--no-detail", action="store_true",
@@ -121,6 +122,15 @@ def run_crawl(args):
         except Exception as e:
             errors.append(f"오피스텔·도시형: {e}")
             print(f"  [오피스텔·도시형 오류] {e}")
+
+    if "building" in sources:
+        try:
+            items = crawl_building(target_regions)
+            save_items(items)
+            print(f"  건축물대장 수집: {len(items)}건")
+        except Exception as e:
+            errors.append(f"건축물대장: {e}")
+            print(f"  [건축물대장 오류] {e}")
 
     print(f"\n신규: {total_new}건 / 업데이트: {total_updated}건")
 
